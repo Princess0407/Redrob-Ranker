@@ -12,15 +12,9 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy all source files
-COPY jd_parser.py /app/jd_parser.py
-COPY features.py /app/features.py
-COPY retrieval.py /app/retrieval.py
-COPY reasoning.py /app/reasoning.py
-COPY precompute.py /app/precompute.py
-COPY rank.py /app/rank.py
-COPY validate_submission.py /app/validate_submission.py
-COPY validate_pipeline.py /app/validate_pipeline.py
+# Copy all source files and scripts
+COPY src/ /app/src/
+COPY scripts/ /app/scripts/
 
 # Copy data directory (skill_aliases.json)
 COPY data/ /app/data/

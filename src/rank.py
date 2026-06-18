@@ -9,6 +9,19 @@ import sys
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Path bootstrap — allow sibling src/ modules and scripts/ to be found
+# regardless of how this script is invoked (python src/rank.py or
+# python -m src.rank). Both src/ and scripts/ are added to sys.path.
+# ---------------------------------------------------------------------------
+_SRC_DIR = os.path.dirname(os.path.abspath(__file__))          # .../src
+_PROJECT_ROOT = os.path.dirname(_SRC_DIR)                       # .../
+_SCRIPTS_DIR = os.path.join(_PROJECT_ROOT, "scripts")
+for _p in [_SRC_DIR, _SCRIPTS_DIR, _PROJECT_ROOT]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import numpy as np
 import pandas as pd
 from rank_bm25 import BM25Okapi
@@ -498,7 +511,7 @@ def pipeline_fn(
     # Score = bm25 + sum of features (lightweight fallback when no LightGBM model)
     try:
         import pickle
-        base = os.path.dirname(os.path.abspath(__file__))
+        base = _PROJECT_ROOT
         with open(os.path.join(base, "precomputed", "lgbm_model.pkl"), "rb") as f:
             model = pickle.load(f)
         X = np.array(feature_rows, dtype=np.float32)
@@ -540,8 +553,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Resolve paths
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Resolve paths — base_dir defaults to the PROJECT ROOT (parent of src/),
+    # not src/ itself, so that data/, precomputed/, and output/ are found.
+    script_dir = _PROJECT_ROOT
     base_dir = os.path.abspath(args.base_dir) if args.base_dir else script_dir
     candidates_path = os.path.abspath(args.candidates)
     out_path = os.path.abspath(args.out)

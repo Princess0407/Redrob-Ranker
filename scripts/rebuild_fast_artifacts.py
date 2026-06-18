@@ -7,6 +7,16 @@ import pickle
 import sys
 import time
 
+# ---------------------------------------------------------------------------
+# Path bootstrap — allow src/ modules to be found when running as a script
+# ---------------------------------------------------------------------------
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       # .../scripts
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    # .../
+_SRC_DIR = os.path.join(_PROJECT_ROOT, "src")
+for _p in [_SRC_DIR, _PROJECT_ROOT]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 import numpy as np
 
 logging.basicConfig(
@@ -16,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = _PROJECT_ROOT
 PRECOMPUTED_DIR = os.path.join(BASE_DIR, "precomputed")
 CANDIDATES_PATH = os.path.join(BASE_DIR, "candidates.jsonl")
 

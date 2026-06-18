@@ -18,37 +18,37 @@ case "$MODE" in
     full)
         echo ""
         echo "--- Step 1: Precompute (BM25 index + LightGBM training) ---"
-        python /app/precompute.py \
+        python /app/scripts/precompute.py \
             --candidates "$CANDIDATES_PATH" \
             --base-dir "$BASE_DIR"
 
         echo ""
         echo "--- Step 2: Rank (produce submission.csv) ---"
-        python /app/rank.py \
+        python /app/src/rank.py \
             --candidates "$CANDIDATES_PATH" \
             --out "$OUT_PATH" \
             --base-dir "$BASE_DIR"
 
         echo ""
         echo "--- Step 3: Validate submission.csv ---"
-        python /app/validate_submission.py --submission "$OUT_PATH"
+        python /app/scripts/validate_submission.py --submission "$OUT_PATH"
         ;;
 
     precompute)
-        python /app/precompute.py \
+        python /app/scripts/precompute.py \
             --candidates "$CANDIDATES_PATH" \
             --base-dir "$BASE_DIR"
         ;;
 
     rank)
-        python /app/rank.py \
+        python /app/src/rank.py \
             --candidates "$CANDIDATES_PATH" \
             --out "$OUT_PATH" \
             --base-dir "$BASE_DIR"
         ;;
 
     validate)
-        python /app/validate_submission.py --submission "$OUT_PATH"
+        python /app/scripts/validate_submission.py --submission "$OUT_PATH"
         ;;
 
     *)

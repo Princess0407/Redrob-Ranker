@@ -9,11 +9,21 @@ import sys
 import time
 from typing import Dict, List, Optional, Tuple
 import numpy as np
+
+# ---------------------------------------------------------------------------
+# Path bootstrap — allow src/ modules to be found when running as a script
+# ---------------------------------------------------------------------------
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       # .../scripts
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    # .../
+_SRC_DIR = os.path.join(_PROJECT_ROOT, "src")
+for _p in [_SRC_DIR, _PROJECT_ROOT]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 try:
     from rank_bm25 import BM25Okapi
 except ImportError:
     import subprocess
-    import sys
     print("rank_bm25 module not found, installing rank-bm25...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "rank-bm25==0.2.2"])
     from rank_bm25 import BM25Okapi
@@ -539,13 +549,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--candidates",
-        default="./candidates.jsonl",
-        help="Path to candidates JSONL file (default: ./candidates.jsonl)",
+        default=os.path.join(_PROJECT_ROOT, "candidates.jsonl"),
+        help="Path to candidates JSONL file (default: project_root/candidates.jsonl)",
     )
     parser.add_argument(
         "--base-dir",
-        default=".",
-        help="Base directory for data/ and precomputed/ (default: current directory)",
+        default=_PROJECT_ROOT,
+        help="Base directory for data/ and precomputed/ (default: project root)",
     )
     args = parser.parse_args()
 
