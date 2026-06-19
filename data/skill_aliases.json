@@ -1,11 +1,11 @@
 {
-  "_comment": "Maps canonical JD requirement concepts to candidate skill name variants for BM25 Stage-1 query expansion. For each JD term, all aliases are added to the BM25 query at index time and query time. type: hard_requirement = 3x scoring weight; preferred = 1x; negative = penalised if primary skill.",
+  "_comment": "Maps canonical JD requirement concepts to the candidate's skill name variants for BM25 Stage 1 query expansion. For each JD term, all aliases are added to the BM25 query at index time and query time. type: hard_requirement = 3x scoring weight; preferred = 1x; negative = penalised if primary skill.",
 
   "jd_requirements": {
 
     "embeddings_retrieval": {
       "type": "hard_requirement",
-      "description": "Production experience with embedding-based retrieval systems",
+      "description": "Production experience with embedding based retrieval systems",
       "aliases": [
         "embeddings", "text embeddings", "vector embeddings", "sentence embeddings",
         "dense retrieval", "semantic search", "semantic similarity",
