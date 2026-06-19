@@ -7,11 +7,8 @@ import pickle
 import sys
 import time
 
-# ---------------------------------------------------------------------------
-# Path bootstrap — allow src/ modules to be found when running as a script
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       # .../scripts
-_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    # .../
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    
 _SRC_DIR = os.path.join(_PROJECT_ROOT, "src")
 for _p in [_SRC_DIR, _PROJECT_ROOT]:
     if _p not in sys.path:
@@ -31,9 +28,6 @@ PRECOMPUTED_DIR = os.path.join(BASE_DIR, "precomputed")
 CANDIDATES_PATH = os.path.join(BASE_DIR, "candidates.jsonl")
 
 
-# ---------------------------------------------------------------------------
-# Build NumPy sparse BM25 matrix
-# ---------------------------------------------------------------------------
 
 def build_numpy_bm25_artifacts(bm25, precomputed_dir: str) -> None:
     """
@@ -65,14 +59,13 @@ def build_numpy_bm25_artifacts(bm25, precomputed_dir: str) -> None:
     doc_len_arr = np.array(bm25.doc_len, dtype=np.float32)
     n_docs: int = int(bm25.corpus_size)
 
-    # Build vocabulary: term → row index (same iteration order as bm25.idf)
+    # term -> row index 
     vocab: dict = {term: idx for idx, term in enumerate(bm25.idf.keys())}
     idf_array = np.array([bm25.idf[term] for term in vocab], dtype=np.float32)
     n_vocab: int = len(vocab)
 
     logger.info("  vocab_size=%d  n_docs=%d", n_vocab, n_docs)
 
-    # Iterate once over doc_freq dicts to populate COO arrays
     rows_list: list = []
     cols_list: list = []
     data_list: list = []
@@ -121,9 +114,6 @@ def build_numpy_bm25_artifacts(bm25, precomputed_dir: str) -> None:
                 os.path.getsize(matrix_path) / 1e6)
 
 
-# ---------------------------------------------------------------------------
-# Build candidate byte-offset index
-# ---------------------------------------------------------------------------
 
 def build_candidate_offset_index(candidates_path: str, precomputed_dir: str) -> None:
     """
@@ -172,16 +162,13 @@ def build_candidate_offset_index(candidates_path: str, precomputed_dir: str) -> 
                 os.path.getsize(out_path) / 1e6)
 
 
-# ---------------------------------------------------------------------------
-# Export LightGBM model to native text format
-# ---------------------------------------------------------------------------
 
 def export_lgbm_native(precomputed_dir: str) -> None:
     """
     Re-save lgbm_model.pkl in LightGBM's native text format.
     lgb.Booster(model_file=...) loads ~10-20x faster than pickle.
     """
-    import lightgbm as lgb  # already installed
+    import lightgbm as lgb  
 
     pkl_path = os.path.join(precomputed_dir, "lgbm_model.pkl")
     txt_path = os.path.join(precomputed_dir, "lgbm_model.txt")
@@ -197,18 +184,12 @@ def export_lgbm_native(precomputed_dir: str) -> None:
                 os.path.getsize(txt_path) / 1e6,
                 time.perf_counter() - t0)
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
 def main() -> None:
     logger.info("=" * 60)
     logger.info("REBUILD FAST ARTIFACTS")
     logger.info("=" * 60)
     t_total = time.perf_counter()
 
-    # --- Load existing BM25Okapi pickle (one-time cost) ---
     bm25_pkl = os.path.join(PRECOMPUTED_DIR, "bm25_index.pkl")
     logger.info("Loading bm25_index.pkl (%.1f MB) …",
                 os.path.getsize(bm25_pkl) / 1e6)
@@ -217,13 +198,11 @@ def main() -> None:
         bm25 = pickle.load(f)
     logger.info("  Loaded in %.2f s", time.perf_counter() - t0)
 
-    # --- Build NumPy sparse BM25 matrix ---
     build_numpy_bm25_artifacts(bm25, PRECOMPUTED_DIR)
 
-    # --- Build candidate offset index ---
+
     build_candidate_offset_index(CANDIDATES_PATH, PRECOMPUTED_DIR)
 
-    # --- Export LightGBM native format ---
     export_lgbm_native(PRECOMPUTED_DIR)
 
     logger.info("=" * 60)
