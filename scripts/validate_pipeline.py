@@ -19,30 +19,13 @@ from collections import Counter
 from itertools import combinations
 
 
-# ---------------------------------------------------------------------
-# 1. Probe-set NDCG@10
-# ---------------------------------------------------------------------
-# Reference labels are hand-assigned from the 28-candidate sample we
-# manually analyzed. These are NOT ground truth for the competition --
-# they are *our own* best judgment, used only to sanity-check that the
-# pipeline doesn't do something obviously wrong.
-
 PROBE_SET_LABELS = {
-    # Strong, defensible fits -- verified skills, product-company career,
-    # technical titles, no consistency-check violations
-    "CAND_0000001": 3,   # Backend/Data Engineer, NLP verified 38.8, Milvus 35mo
-    "CAND_0000010": 3,   # Data Engineer, 4 verified AI skills, Ola (product co)
+    "CAND_0000001": 3,  
+    "CAND_0000010": 3,  
 
-    # Confirmed trap -- must rank low, all disqualifiers should fire
-    "CAND_0000021": 0,   # 14.5yr non-technical career, zero verified AI skills,
-                          # all AI skill claims under 18mo, 100% IT-services/
-                          # non-technical titles
-
-    # Mid-tier, genuinely ambiguous -- used to check the system isn't
-    # just separating obvious cases and ignoring the middle
-    "CAND_0000014": 2,   # Frontend Engineer but FAISS verified 77.6 -- a
-                          # plausible "hidden gem" if title alone were trusted
-    "CAND_0000011": 1,   # 2.0yr QA Engineer, self-taught AI/ML, no verification
+    "CAND_0000021": 0,  
+    "CAND_0000014": 2,  
+    "CAND_0000011": 1,  
 }
 
 
@@ -71,16 +54,7 @@ def compute_probe_ndcg10(ranked_candidate_ids: list[str],
     return dcg / idcg if idcg > 0 else 0.0
 
 
-# TODO before first submission: expand PROBE_SET_LABELS to 50-100
-# candidates by manually reviewing a stratified sample of the full
-# dataset (some clear fits, some clear traps, mostly ambiguous
-# mid-tier profiles). 5 reference points is enough to catch a
-# completely broken pipeline, not enough to trust a borderline score.
-
-
-# ---------------------------------------------------------------------
-# 2. Ablation table
-# ---------------------------------------------------------------------
+# ablation table
 
 def run_ablation(pipeline_fn, candidates: list[dict], jd_config: dict) -> dict:
     """
@@ -119,10 +93,7 @@ def print_ablation_report(results: dict) -> None:
                 flag = "  <-- WARNING: removing this IMPROVED the score. Investigate."
         print(f"{name:30s} NDCG@10 = {r['ndcg10']}{flag}")
 
-
-# ---------------------------------------------------------------------
-# 3. Honeypot injection test
-# ---------------------------------------------------------------------
+# honeypot injection test
 
 def make_synthetic_honeypot(violation: str, base_candidate: dict) -> dict:
     """
@@ -130,7 +101,7 @@ def make_synthetic_honeypot(violation: str, base_candidate: dict) -> dict:
     consistency-check violation, so each test case isolates a single
     check rather than confounding several at once.
     """
-    c = json.loads(json.dumps(base_candidate))  # deep copy
+    c = json.loads(json.dumps(base_candidate))  
     c["candidate_id"] = f"SYNTH_{violation.upper()}"
 
     if violation == "timeline_impossibility":
@@ -195,19 +166,11 @@ def run_honeypot_injection_test(pipeline_fn, real_candidates: list[dict],
     }
 
 
-# ---------------------------------------------------------------------
-# 4. Top-100 diversity / homogeneity check  (NEW)
-# ---------------------------------------------------------------------
-# Not a new scoring signal. A post-hoc sanity check on the FINAL top
-# 100 output: confirms one overweighted feature isn't quietly
-# producing a list of near-clones. Cheap, explainable, and exactly
-# the kind of thing worth being able to say out loud in a defense
-# interview ("here's how we checked we weren't just finding one
-# type of candidate").
+# diversity check
 
 def candidate_archetype_signature(candidate: dict, feature_vector: dict) -> tuple:
     """
-    A coarse, human-readable signature for clustering -- deliberately
+    A coarse, human readable signature for clustering deliberately
     simple (no embeddings, no clustering library) so it stays fast
     and auditable. Buckets each candidate into a small discrete
     profile rather than computing exact distances.
@@ -296,10 +259,7 @@ def print_diversity_report(report: dict) -> None:
             print(f"    {company}: {count} candidates")
     print(f"\n  PASS: {report['pass']}")
 
-
-# ---------------------------------------------------------------------
-# 5. Readiness gate
-# ---------------------------------------------------------------------
+# readiness gate
 
 def readiness_gate(probe_ndcg10: float,
                     honeypot_result: dict,
@@ -336,9 +296,6 @@ def print_readiness_report(gate_result: dict) -> None:
         print("NOT READY -- fix failing checks above before spending a submission.")
 
 
-# ---------------------------------------------------------------------
-# Example end-to-end usage (adapt pipeline_fn to your actual rank.py)
-# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
     print(__doc__)
