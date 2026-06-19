@@ -14,16 +14,11 @@ from rank_bm25 import BM25Okapi
 
 st.set_page_config(
     page_title="Redrob Candidate Ranker",
-    page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# ---------------------------------------------------------------------------
-# Path setup & bootstrap
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       # .../scripts
-_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    # .../
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    
 _SRC_DIR = os.path.join(_PROJECT_ROOT, "src")
 for _p in [_SRC_DIR, _PROJECT_ROOT]:
     if _p not in sys.path:
@@ -34,11 +29,7 @@ PRECOMPUTED_DIR = os.path.join(BASE_DIR, "precomputed")
 DATA_DIR = os.path.join(BASE_DIR, "data")
 ALIASES_PATH = os.path.join(DATA_DIR, "skill_aliases.json")
 
-LITE_MODE_LIMIT = 10_000  # Max candidates in Streamlit mode (≤1GB RAM)
-
-# ---------------------------------------------------------------------------
-# Cached resource loading (loaded once, not on every rerun)
-# ---------------------------------------------------------------------------
+LITE_MODE_LIMIT = 10_000 # max cand. that can enter streamlit mode
 
 @st.cache_resource(show_spinner="Loading JD configuration...")
 def load_jd_config():
@@ -68,10 +59,6 @@ def load_model():
         return pickle.load(f)
 
 
-# ---------------------------------------------------------------------------
-# Inline ranking for uploaded data
-# ---------------------------------------------------------------------------
-
 def rank_candidates_inline(
     candidates: List[dict],
     jd_config,
@@ -86,7 +73,7 @@ def rank_candidates_inline(
     from reasoning import ReasoningCompiler
     from precompute import tokenize_candidate
 
-    # Limit candidate set for memory safety
+  # this line allows a limited no of candidates for safety of memory
     if len(candidates) > max_n:
         st.warning(
             f"Lite mode: processing first {max_n} of {len(candidates)} candidates "
@@ -94,20 +81,17 @@ def rank_candidates_inline(
         )
         candidates = candidates[:max_n]
 
-    # Build in-memory BM25 for the uploaded set
     corpus = [tokenize_candidate(c) for c in candidates]
     inline_bm25 = BM25Okapi(corpus)
     cids = [c.get("candidate_id", f"IDX_{i}") for i, c in enumerate(candidates)]
 
-    # Query
     query_tokens = tokenize_query(
         jd_config.get_all_query_terms() + jd_config.production_keywords
     )
     bm25_raw = inline_bm25.get_scores(query_tokens)
     bm25_scores = {cids[i]: float(bm25_raw[i]) for i in range(len(cids))}
     median_bm25 = float(np.median(list(bm25_scores.values())))
-
-    # Features
+    
     feature_rows = []
     valid_cids = []
     for c in candidates:
@@ -123,25 +107,25 @@ def rank_candidates_inline(
 
     X = np.array(feature_rows, dtype=np.float32)
 
-    # LightGBM inference
+  
     if model is not None:
         scores = model.predict(X)
     else:
         scores = bm25_raw[:len(valid_cids)]
 
-    # Rank
+ 
     ranked = sorted(
         zip(valid_cids, scores.tolist()),
         key=lambda x: (-x[1], x[0])
     )
     top100 = ranked[:100]
 
-    # Normalize scores
+  
     top_scores = [s for _, s in top100]
     s_min, s_max = min(top_scores), max(top_scores)
     s_range = s_max - s_min
 
-    # Reasoning
+  
     compiler = ReasoningCompiler(jd_config, all_scores=[s for _, s in top100])
 
     candidate_lookup = {c.get("candidate_id"): c for c in candidates}
@@ -173,41 +157,37 @@ def rank_candidates_inline(
     return pd.DataFrame(rows)
 
 
-# ---------------------------------------------------------------------------
-# UI
-# ---------------------------------------------------------------------------
 
 def main():
-    st.title("🎯 Redrob Candidate Ranker")
+    st.title(" Redrob Candidate Ranker")
     st.caption(
-        "Production-grade candidate ranking — Redrob Hackathon submission. "
+        "Candidate ranking: Redrob hackathon submission. "
         "Lite mode (≤10K candidates, ≤1GB RAM)."
     )
 
-    # Sidebar
     with st.sidebar:
-        st.header("⚙️ Pipeline Status")
+        st.header(" Pipeline status")
 
         jd_config = load_jd_config()
         st.success(
-            f"✅ JD Config loaded: {len(jd_config.hard_requirements)} hard reqs, "
+            f" JD Config loaded: {len(jd_config.hard_requirements)} hard reqs, "
             f"{len(jd_config.preferred_requirements)} preferred"
         )
 
         bm25, candidate_ids = load_bm25()
         if bm25 is not None:
-            st.success(f"✅ BM25 Index: {len(candidate_ids):,} candidates indexed")
+            st.success(f"BM25 Index: {len(candidate_ids):,} candidates indexed")
         else:
-            st.warning("⚠️ BM25 index not found — run precompute.py first")
+            st.warning("BM25 index not found — run precompute.py first")
 
         model = load_model()
         if model is not None:
-            st.success("✅ LightGBM model loaded")
+            st.success("LightGBM model loaded")
         else:
-            st.warning("⚠️ LightGBM model not found — run precompute.py first")
+            st.warning("LightGBM model not found — run precompute.py first")
 
         st.divider()
-        st.header("📋 JD Requirements")
+        st.header("JD Requirements")
         with st.expander("Hard Requirements"):
             for name in jd_config.hard_requirements:
                 st.write(f"• {name.replace('_', ' ').title()}")
@@ -215,12 +195,9 @@ def main():
             for name in jd_config.preferred_requirements:
                 st.write(f"• {name.replace('_', ' ').title()}")
 
-    # Main area
-    tab1, tab2, tab3 = st.tabs(["📤 Upload & Rank", "📊 Architecture", "✅ Validate"])
 
-    # -----------------------------------------------------------------------
-    # Tab 1: Upload and rank
-    # -----------------------------------------------------------------------
+    tab1, tab2, tab3 = st.tabs(["Upload & Rank", "Architecture", "Validate"])
+
     with tab1:
         st.header("Upload Candidates & Run Ranking")
 
@@ -255,17 +232,17 @@ def main():
                     malformed += 1
 
             if malformed > 0:
-                st.warning(f"⚠️ Skipped {malformed} malformed lines")
+                st.warning(f" Skipped {malformed} malformed lines")
 
             st.info(
-                f"📂 Loaded {len(candidates):,} candidates from uploaded file"
+                f" Loaded {len(candidates):,} candidates from uploaded file"
             )
 
             if len(candidates) == 0:
                 st.error("No valid candidates found in uploaded file.")
             else:
                 run_btn = st.button(
-                    "🚀 Run Ranking Pipeline",
+                    " Run ranking pipeline",
                     type="primary",
                     use_container_width=True,
                 )
@@ -281,10 +258,9 @@ def main():
 
                             if result_df is not None and len(result_df) > 0:
                                 st.success(
-                                    f"✅ Ranked {len(result_df)} candidates in {elapsed:.1f}s"
+                                    f" Ranked {len(result_df)} candidates in {elapsed:.1f}s"
                                 )
 
-                                # Metrics
                                 m1, m2, m3, m4 = st.columns(4)
                                 m1.metric("Total Ranked", len(result_df))
                                 m2.metric("Top Score", f"{result_df['score'].max():.4f}")
@@ -294,7 +270,7 @@ def main():
                                 )
                                 m4.metric("Wall-clock", f"{elapsed:.1f}s")
 
-                                # Results table
+                        
                                 st.subheader("Top 100 Candidates")
                                 display_df = result_df[[
                                     "rank", "candidate_id", "name", "title",
@@ -309,7 +285,6 @@ def main():
                                     height=500,
                                 )
 
-                                # Individual reasoning viewer
                                 st.subheader("Reasoning Explorer")
                                 selected_rank = st.slider(
                                     "Select candidate rank to view reasoning:",
@@ -329,12 +304,11 @@ def main():
                                         col_b.metric("Consistency", f"{row['consistency_score']:.2f}")
                                         st.markdown(f"**Reasoning:** {row['reasoning']}")
 
-                                # Download
                                 csv_output = result_df[
                                     ["candidate_id", "rank", "score", "reasoning"]
                                 ].to_csv(index=False)
                                 st.download_button(
-                                    label="📥 Download submission.csv",
+                                    label=" Download submission.csv",
                                     data=csv_output,
                                     file_name="submission.csv",
                                     mime="text/csv",
@@ -348,11 +322,10 @@ def main():
                             st.code(traceback.format_exc())
         else:
             st.info(
-                "👆 Upload a JSONL file of candidate records to rank them. "
+                " Upload a JSONL file of candidate records to rank them. "
                 "The file must match the Redrob candidate schema."
             )
-
-            # Show a sample
+# sample
             with st.expander("Expected JSONL format (one candidate per line)"):
                 sample = {
                     "candidate_id": "CAND_0000001",
@@ -372,9 +345,7 @@ def main():
                 }
                 st.json(sample)
 
-    # -----------------------------------------------------------------------
-    # Tab 2: Architecture
-    # -----------------------------------------------------------------------
+    
     with tab2:
         st.header("Architecture Overview")
 
@@ -395,11 +366,11 @@ def main():
         with col2:
             st.subheader("Hardware Constraints")
             st.markdown("""
-            - ⏱️ **≤5 minutes** wall-clock
-            - 💾 **≤16 GB RAM** CPU-only
-            - 🔒 **Zero** network calls during ranking
-            - 📁 **≤5 GB** intermediate disk state
-            - 🐳 **Docker** `--network none` compatible
+            -  **≤5 minutes** clock
+            -  **≤16 GB RAM** CPU only
+            -  **Zero** network calls during ranking
+            -  **≤5 GB** intermediate disk state
+            -  **Docker** `--network none` compatible
             """)
 
         st.subheader("22-Feature Matrix")
@@ -429,9 +400,7 @@ def main():
         ])
         st.dataframe(features_df, use_container_width=True, hide_index=True)
 
-    # -----------------------------------------------------------------------
-    # Tab 3: Validate submission
-    # -----------------------------------------------------------------------
+ 
     with tab3:
         st.header("Validate Submission CSV")
         st.info(
@@ -448,22 +417,19 @@ def main():
                 errors = []
                 warnings_list = []
 
-                # Check columns
                 required_cols = {"candidate_id", "rank", "score", "reasoning"}
                 missing_cols = required_cols - set(df.columns)
                 if missing_cols:
                     errors.append(f"Missing columns: {missing_cols}")
 
                 if not errors:
-                    # Check row count
+
                     if len(df) != 100:
                         errors.append(f"Expected 100 rows, got {len(df)}")
 
-                    # Check ranks
                     if set(df["rank"].tolist()) != set(range(1, 101)):
                         errors.append("Ranks must be exactly 1–100 with no gaps")
 
-                    # Check monotonicity
                     df_sorted = df.sort_values("rank")
                     scores = df_sorted["score"].values
                     for i in range(1, len(scores)):
@@ -474,33 +440,30 @@ def main():
                             )
                             break
 
-                    # Check score range
                     if df["score"].min() < 0 or df["score"].max() > 1:
                         warnings_list.append(
                             f"Scores outside [0,1]: min={df['score'].min():.4f}, "
                             f"max={df['score'].max():.4f}"
                         )
 
-                    # Check for empty reasoning
                     empty_reasoning = df["reasoning"].isna() | (df["reasoning"].str.strip() == "")
                     if empty_reasoning.any():
                         errors.append(
                             f"{empty_reasoning.sum()} rows have empty reasoning"
                         )
 
-                    # Check for duplicate candidate IDs
                     if df["candidate_id"].duplicated().any():
                         errors.append("Duplicate candidate_ids found")
 
                 if errors:
-                    st.error(f"❌ Validation FAILED ({len(errors)} errors):")
+                    st.error(f"Validation failed!!({len(errors)} errors):")
                     for e in errors:
                         st.write(f"  • {e}")
                 else:
-                    st.success("✅ Validation PASSED — ready to submit!")
+                    st.success("Validation paased!!")
                     if warnings_list:
                         for w in warnings_list:
-                            st.warning(f"⚠️ {w}")
+                            st.warning(f"warning {w}")
 
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Rows", len(df))

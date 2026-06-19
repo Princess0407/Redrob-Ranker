@@ -8,10 +8,6 @@ import sys
 import pandas as pd
 
 
-# ---------------------------------------------------------------------------
-# Validation checks
-# ---------------------------------------------------------------------------
-
 def validate_submission(submission_path: str) -> bool:
     """
     Run all format validation checks on submission.csv.
@@ -27,16 +23,11 @@ def validate_submission(submission_path: str) -> bool:
     print(f"File: {submission_path}")
     print("=" * 60)
 
-    # -----------------------------------------------------------------------
-    # 1. File existence
-    # -----------------------------------------------------------------------
+    #  file existence
     if not os.path.isfile(submission_path):
         print(f"\n[FAIL] File not found: {submission_path}")
         return False
 
-    # -----------------------------------------------------------------------
-    # 2. File is readable CSV
-    # -----------------------------------------------------------------------
     try:
         df = pd.read_csv(submission_path, dtype={"candidate_id": str, "reasoning": str})
     except Exception as e:
@@ -45,9 +36,7 @@ def validate_submission(submission_path: str) -> bool:
 
     print(f"\nParsed: {len(df)} rows × {len(df.columns)} columns")
 
-    # -----------------------------------------------------------------------
-    # 3. Required columns present and in correct order
-    # -----------------------------------------------------------------------
+
     required_cols = ["candidate_id", "rank", "score", "reasoning"]
     if list(df.columns) != required_cols:
         missing = set(required_cols) - set(df.columns)
@@ -69,15 +58,10 @@ def validate_submission(submission_path: str) -> bool:
             print(f"[FAIL] {e}")
         return False
 
-    # -----------------------------------------------------------------------
-    # 4. Exactly 100 rows
-    # -----------------------------------------------------------------------
+
     if len(df) != 100:
         errors.append(f"Expected exactly 100 rows, got {len(df)}")
 
-    # -----------------------------------------------------------------------
-    # 5. Rank column: integers 1–100, no gaps, no duplicates
-    # -----------------------------------------------------------------------
     try:
         ranks = df["rank"].tolist()
         rank_set = set(int(r) for r in ranks)
@@ -93,9 +77,6 @@ def validate_submission(submission_path: str) -> bool:
     except (TypeError, ValueError) as e:
         errors.append(f"Rank column contains non-integer values: {e}")
 
-    # -----------------------------------------------------------------------
-    # 6. Score column: numeric, in [0, 1]
-    # -----------------------------------------------------------------------
     try:
         scores = pd.to_numeric(df["score"], errors="raise")
         if scores.isna().any():
@@ -108,9 +89,6 @@ def validate_submission(submission_path: str) -> bool:
     except ValueError as e:
         errors.append(f"Score column contains non-numeric values: {e}")
 
-    # -----------------------------------------------------------------------
-    # 7. Monotonically non-increasing scores (sorted by rank)
-    # -----------------------------------------------------------------------
     try:
         df_sorted = df.copy()
         df_sorted["rank_int"] = pd.to_numeric(df_sorted["rank"], errors="coerce")
@@ -132,9 +110,6 @@ def validate_submission(submission_path: str) -> bool:
     except Exception as e:
         errors.append(f"Could not check monotonicity: {e}")
 
-    # -----------------------------------------------------------------------
-    # 8. candidate_id column: non-null, no duplicates, CAND_XXXXXXX format
-    # -----------------------------------------------------------------------
     if df["candidate_id"].isna().any():
         errors.append("candidate_id column contains NaN values")
     else:
@@ -142,8 +117,7 @@ def validate_submission(submission_path: str) -> bool:
             dups = df[df["candidate_id"].duplicated()]["candidate_id"].tolist()
             errors.append(f"Duplicate candidate_ids: {dups[:5]}")
 
-        # Check format (CAND_XXXXXXX — 7 digits) — warn only, don't fail
-        # since SYNTH_ IDs from test may appear
+     
         bad_format = [
             cid for cid in df["candidate_id"]
             if not re.match(r'^(CAND_\d{7}|SYNTH_[A-Z_]+)$', str(cid))
@@ -154,9 +128,6 @@ def validate_submission(submission_path: str) -> bool:
                 f"{bad_format[:3]}"
             )
 
-    # -----------------------------------------------------------------------
-    # 9. Reasoning column: non-empty strings
-    # -----------------------------------------------------------------------
     if df["reasoning"].isna().any():
         errors.append(f"{df['reasoning'].isna().sum()} reasoning fields are null")
 
@@ -164,23 +135,18 @@ def validate_submission(submission_path: str) -> bool:
     if empty_reasoning.any():
         errors.append(f"{empty_reasoning.sum()} reasoning fields are empty")
 
-    # Check reasonable length (warn if very short)
+    # check reasonable length (warn if very short)
     short_reasoning = df["reasoning"].fillna("").str.len() < 20
     if short_reasoning.any():
         warnings.append(
             f"{short_reasoning.sum()} reasoning fields are very short (<20 chars)"
         )
 
-    # -----------------------------------------------------------------------
-    # 10. No extra whitespace in candidate_ids
-    # -----------------------------------------------------------------------
     stripped = df["candidate_id"].str.strip()
     if (stripped != df["candidate_id"]).any():
         errors.append("Some candidate_ids have leading/trailing whitespace")
 
-    # -----------------------------------------------------------------------
-    # Print results
-    # -----------------------------------------------------------------------
+
     print()
     if errors:
         print(f"RESULT: FAIL ({len(errors)} error(s), {len(warnings)} warning(s))\n")
@@ -192,7 +158,6 @@ def validate_submission(submission_path: str) -> bool:
     else:
         print(f"RESULT: PASS (0 errors, {len(warnings)} warning(s))\n")
 
-        # Show quick summary stats
         df_sorted = df.sort_values("rank")
         scores = pd.to_numeric(df_sorted["score"])
         print(f"  Rows: {len(df)}")

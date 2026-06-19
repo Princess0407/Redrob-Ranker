@@ -5,7 +5,7 @@ import time
 import subprocess
 import argparse
 
-# Path setup to project root
+
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)
 
@@ -26,7 +26,7 @@ def check_artifacts_up_to_date(precomputed_dir: str, candidates_path: str) -> bo
         if not os.path.isfile(fpath):
             return False
         
-        # Check mtime vs candidates.jsonl
+        #  mtime vs candidates.jsonl
         if os.path.isfile(candidates_path):
             if os.path.getmtime(fpath) < os.path.getmtime(candidates_path):
                 return False
@@ -36,7 +36,7 @@ def run_step(command_list, step_label, step_num):
     print(f"\n[{step_num}/3] Running {step_label}...")
     t0 = time.time()
     
-    # Run process
+    # process
     result = subprocess.run(command_list, capture_output=True, text=True)
     
     elapsed = time.time() - t0
@@ -66,7 +66,6 @@ def main():
     
     t_start = time.time()
     
-    # Check if precompute is needed
     artifacts_ready = check_artifacts_up_to_date(precomputed_dir, candidates_path)
     
     python_exe = sys.executable
@@ -78,11 +77,11 @@ def main():
     else:
         print("\n[1/3] Precompute skipped (artifacts up to date)")
 
-    # Step 2: Rank
+    # rank
     cmd = [python_exe, "src/rank.py", "--candidates", candidates_path, "--out", out_path, "--base-dir", _PROJECT_ROOT]
     t_rank = run_step(cmd, "rank", 2)
 
-    # Step 3: Validate
+    # validate
     cmd = [python_exe, "scripts/validate_submission.py", "--submission", out_path]
     t_validate = run_step(cmd, "validate_submission", 3)
 
@@ -91,12 +90,12 @@ def main():
     print("\n" + "=" * 60)
     print("PIPELINE EXECUTION SUMMARY")
     print("=" * 60)
-    print(f"  Total Wall-Clock Time: {total_wall:.2f} seconds")
+    print(f"  Total Clock Time: {total_wall:.2f} seconds")
     print(f"  Step 1 (Precompute):   {t_precompute:.2f}s" if t_precompute > 0 else "  Step 1 (Precompute):   Skipped (up to date)")
     print(f"  Step 2 (Ranking):      {t_rank:.2f}s")
     print(f"  Step 3 (Validation):   {t_validate:.2f}s")
     
-    # Confirm output file size & count
+    
     if os.path.isfile(out_path):
         try:
             import pandas as pd
@@ -112,8 +111,7 @@ def main():
     else:
         print("  [ERROR]                Missing output file submission.csv!")
         sys.exit(1)
-        
-    # Find latest log file
+    
     log_dir = os.path.join(_PROJECT_ROOT, "logs")
     if os.path.isdir(log_dir):
         logs = [os.path.join(log_dir, f) for f in os.listdir(log_dir) if f.startswith("rank_")]

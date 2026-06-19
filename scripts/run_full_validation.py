@@ -6,7 +6,6 @@ import json
 import pandas as pd
 import numpy as np
 
-# Path setup to import src/scripts modules
 _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)
 _SRC_DIR = os.path.join(_PROJECT_ROOT, "src")
@@ -27,7 +26,6 @@ def main():
     precomputed_dir = os.path.join(_PROJECT_ROOT, "precomputed")
     submission_path = os.path.join(_PROJECT_ROOT, "submission.csv")
 
-    # Load artifacts and configurations
     print("Loading validation configurations and index...")
     jd_config = parse_jd(aliases_path)
     bm25 = load_numpy_bm25_artifacts(precomputed_dir)
@@ -44,12 +42,11 @@ def main():
     with open(static_path, "rb") as f:
         static_features = pickle.load(f)
 
-    # 1. Honeypot Injection Test
-    # Load first 100 Stage 1 candidates to run as real candidate base
-    print("\n--- Running 1/4: Honeypot Injection Test ---")
+    # honeypot injection Test
+    print(" Running 1/4: Honeypot Injection Test ---")
     stage1_ids, bm25_scores = run_dual_pass_retrieval(bm25, candidate_ids, jd_config)
     
-    # Dummy Logger to suppress loading logs
+    # dummy logger to suppress loading logs
     class Logger:
         def info(self, *args): pass
         def warning(self, *args): pass
@@ -63,8 +60,8 @@ def main():
     hp_leaked_count = len(hp_result["leaked_into_top_n"])
     print(f"Honeypot Injection Test: {'PASS' if hp_pass else 'FAIL'} (Leaked: {hp_leaked_count} of {hp_result['total_synthetic']})")
 
-    # 2. check_top100_diversity
-    print("\n--- Running 2/4: Diversity Audit Check ---")
+    # top100 diversity
+    print(" Running 2/4: Diversity Audit Check----")
     div_pass = False
     div_details = "Submission file missing"
     if os.path.isfile(submission_path):
@@ -72,7 +69,7 @@ def main():
         top100_ids = df_sub["candidate_id"].tolist()
         top100_candidates, _ = load_stage1_candidates_fast(candidates_path, top100_ids, candidate_offsets, Logger())
         
-        # Build feature vectors
+        # build feature vectors
         stage1_bm25_median = float(np.median(list(bm25_scores.values())))
         feature_vectors = {}
         for c in top100_candidates:
@@ -89,20 +86,19 @@ def main():
     else:
         print("Diversity Check: FAIL (submission.csv not found)")
 
-    # 3. c5 boundary-gap test
-    print("\n--- Running 3/4: c5 Boundary-Gap Test ---")
-    # Fetch rank 1 candidate
+    # boundary gap test
+    print("Running 3/4: c5 Boundary Gap Test---")
     r1_cand = sample_candidates[0]
     import copy
     
-    # Test case 1: Just inside the threshold (connections=60, appearances=15, endorsements=4)
+    # test case: just inside the threshold (connections=60, appearances=15, endorsements=4)
     inside_c = copy.deepcopy(r1_cand)
     inside_c["redrob_signals"]["connection_count"] = 60
     inside_c["redrob_signals"]["search_appearance_30d"] = 15
     inside_c["redrob_signals"]["endorsements_received"] = 4
     c5_inside = c5_engagement_mismatch(inside_c, bm25_score=60.0, median_bm25=50.0)
     
-    # Test case 2: Just outside the threshold (connections=61, appearances=15, endorsements=4)
+    # test case: just outside the threshold (connections=61, appearances=15, endorsements=4)
     outside_c = copy.deepcopy(r1_cand)
     outside_c["redrob_signals"]["connection_count"] = 61
     outside_c["redrob_signals"]["search_appearance_30d"] = 15
@@ -113,19 +109,18 @@ def main():
     c5_details = f"Fired on boundary inside (60/15/4 -> {c5_inside:.1f}) and passed outside (61/15/4 -> {c5_outside:.1f})"
     print(f"c5 Boundary Test: {'PASS' if c5_pass else 'FAIL'} ({c5_details})")
 
-    # 4. Probe-set NDCG@10 check
-    print("\n--- Running 4/4: Probe-set NDCG@10 Check ---")
+    # probe set NDCG@10 check
+    print(" Running 4/4: Probe-set NDCG@10 Check---")
     ndcg_val = None
     if os.path.isfile(submission_path):
         ndcg_val = compute_probe_ndcg10(top100_ids)
     
-    ndcg_pass = True  # Always counts as pass structurally, but warns if overlap is empty
+    ndcg_pass = True  
     ndcg_details = f"NDCG@10 = {ndcg_val}"
     if ndcg_val is None:
         ndcg_details = "NDCG@10 = None (No probe set candidate IDs present in Stage 1 pool; expected behavior on full pool)"
     print(f"Probe-set NDCG@10: {ndcg_details}")
 
-    # Output validation summary table
     print("\n" + "=" * 80)
     print("VALIDATION RUN SUMMARY")
     print("=" * 80)
@@ -135,7 +130,6 @@ def main():
     print(f"  Probe-set NDCG@10 Check     | PASS | {ndcg_details}")
     print("=" * 80)
 
-    # Return exit codes
     all_pass = hp_pass and div_pass and c5_pass and ndcg_pass
     sys.exit(0 if all_pass else 1)
 

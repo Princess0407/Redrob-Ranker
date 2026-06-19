@@ -10,11 +10,8 @@ import time
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Path bootstrap — allow src/ modules to be found when running as a script
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))       # .../scripts
-_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    # .../
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))      
+_PROJECT_ROOT = os.path.dirname(_SCRIPTS_DIR)                    
 _SRC_DIR = os.path.join(_PROJECT_ROOT, "src")
 for _p in [_SRC_DIR, _PROJECT_ROOT]:
     if _p not in sys.path:
@@ -45,13 +42,12 @@ def tokenize_candidate(candidate: dict) -> List[str]:
     """
     tokens = []
 
-    # Skill names (weighted naturally by BM25 tf)
     for skill in (candidate.get("skills") or []):
         name = (skill.get("name") or "").strip()
         if name:
             tokens.extend(name.lower().split())
 
-    # Career history descriptions
+    # career history descriptions
     for ch in (candidate.get("career_history") or []):
         desc = (ch.get("description") or "").strip()
         title = (ch.get("title") or "").strip()
@@ -60,13 +56,13 @@ def tokenize_candidate(candidate: dict) -> List[str]:
         if title:
             tokens.extend(title.lower().split())
 
-    # Headline (summary is dropped entirely as it is almost entirely templated noise)
+    # headline 
     profile = candidate.get("profile") or {}
     headline = (profile.get("headline") or "").strip()
     if headline:
         tokens.extend(headline.lower().split())
 
-    # Certification names
+    # certifications
     for cert in (candidate.get("certifications") or []):
         name = (cert.get("name") or "").strip()
         if name:
@@ -190,21 +186,13 @@ def compute_offline_weak_labels(
             if not cid or cid not in candidate_ids_set:
                 continue
 
-            # Hard requirement coverage — uses skills and career text only
+            # hard requirement coverage 
             hrc = hard_req_coverage_score(candidate, jd_config)
-
-            # Consistency score — bm25_score=0.0 (excluded), median=0.0 (c5 won't fire)
-            # Per non-circularity: c5 engagement mismatch is disabled at label-gen time
-            # because we have no stage1 BM25 scores yet.
             c1 = c1_timeline_impossibility(candidate)
             c2 = c2_signup_anomaly(candidate)
             c3 = c3_salary_inversion(candidate)
             c4 = c4_assessment_contradiction(candidate)
-            # c5 requires BM25 scores — skipped at offline label generation
-            # The model will learn this signal from the feature itself
-            cons = c1 * c2 * c3 * c4  # 4-check product (c5 excluded offline)
-
-            # Pull adversarial functions — these are JD fit signals, not data integrity
+            cons = c1 * c2 * c3 * c4  
             from features import (
                 detect_description_title_mismatch,
                 score_langchain_dabbler,
@@ -212,7 +200,7 @@ def compute_offline_weak_labels(
                 score_cv_speech_specialist,
             )
 
-            # Compute consulting fraction inline (same logic as Param_F)
+            #  consulting fraction inline 
             consulting_m = sum(
                 float(r.get("duration_months") or 0)
                 for r in (candidate.get("career_history") or [])
@@ -296,7 +284,7 @@ def extract_training_features(
             try:
                 fv = build_feature_vector(
                     candidate, jd_config,
-                    bm25_score=0.0,  # Always 0 at training time
+                    bm25_score=0.0, 
                     stage1_bm25_median=0.0,
                 )
             except Exception as e:
@@ -308,7 +296,6 @@ def extract_training_features(
             if len(feature_rows) % 10000 == 0:
                 logger.info("  Features: %d extracted...", len(feature_rows))
 
-    # Build ordered matrix matching candidate_ids order
     matrix = []
     ordered_ids = []
     for cid in candidate_ids:
@@ -353,14 +340,10 @@ def train_lightgbm(
     logger.info("Training LightGBM LambdaRank model...")
     t0 = time.time()
 
-    # Get labels in the same order as feature matrix
+
     y_raw = np.array([weak_labels.get(cid, 0.0) for cid in ordered_ids], dtype=np.float32)
 
-    # Discretize continuous labels to 4 levels: [0, 1, 2, 3]
-    # 0: weak_label == 0 (failures)
-    # 1: 0 < label <= 0.33
-    # 2: 0.33 < label <= 0.66
-    # 3: label > 0.66
+  
     y_int = np.zeros(len(y_raw), dtype=np.int32)
     y_int[y_raw > 0] = 1
     y_int[y_raw > 0.33] = 2
@@ -372,19 +355,17 @@ def train_lightgbm(
         (y_int == 2).sum(), (y_int == 3).sum()
     )
 
-    # LightGBM lambdarank limit: max 10,000 rows per query group.
-    # Split 100K candidates into groups of GROUP_SIZE.
-    # Shuffle first so groups are stratified (not all positives in one group).
-    GROUP_SIZE = 5000  # well within the 10K limit
+    
+    # spliting 100K candidates into groups of GROUP_SIZE
+    GROUP_SIZE = 5000  
     n = len(ordered_ids)
 
-    # Shuffle indices to distribute positives evenly across groups
     rng = np.random.default_rng(seed=42)
     shuffle_idx = rng.permutation(n)
     X_shuffled = X[shuffle_idx]
     y_shuffled = y_int[shuffle_idx]
 
-    # Build group sizes
+    # build group sizes
     n_groups = (n + GROUP_SIZE - 1) // GROUP_SIZE  # ceiling division
     group = []
     for i in range(n_groups):
@@ -417,7 +398,6 @@ def train_lightgbm(
         "verbose": -1,
     }
 
-    # Train without validation set (no split needed — we train on full data)
     model = lgb.train(
         params,
         train_data,
@@ -432,14 +412,12 @@ def train_lightgbm(
     elapsed = time.time() - t0
     logger.info("LightGBM training complete in %.1fs", elapsed)
 
-    # Feature importance log
     importances = dict(zip(FEATURE_COLUMNS, model.feature_importance(importance_type="gain")))
     sorted_imp = sorted(importances.items(), key=lambda x: x[1], reverse=True)
     logger.info("Top 5 feature importances (gain):")
     for fname, imp in sorted_imp[:5]:
         logger.info("  %s: %.2f", fname, imp)
 
-    # Save model
     model_path = os.path.join(precomputed_dir, "lgbm_model.pkl")
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
@@ -510,7 +488,6 @@ def compute_and_save_static_features(
             if not cid or cid not in candidate_ids_set:
                 continue
 
-            # Compute features
             yoe = compute_yoe(candidate)
             param_a = compute_param_a_systems_depth(candidate)
             param_b = compute_param_b_availability(candidate)
@@ -573,7 +550,6 @@ def main(candidates_path: str, base_dir: str) -> None:
 
     os.makedirs(precomputed_dir, exist_ok=True)
 
-    # Validate inputs
     if not os.path.isfile(candidates_path):
         logger.error("Candidates file not found: %s", candidates_path)
         sys.exit(1)
@@ -585,8 +561,7 @@ def main(candidates_path: str, base_dir: str) -> None:
     logger.info("Candidates: %s", candidates_path)
     logger.info("Base dir: %s", base_dir)
     t_total = time.time()
-
-    # Step 1: Parse JD config
+    
     from jd_parser import parse_jd
     jd_config = parse_jd(aliases_path)
     logger.info(
@@ -594,39 +569,37 @@ def main(candidates_path: str, base_dir: str) -> None:
         len(jd_config.hard_requirements),
         len(jd_config.preferred_requirements)
     )
-
-    # Step 2: Build BM25 corpus and index
+    
     candidate_ids, corpus, malformed_count = stream_build_bm25_corpus(candidates_path)
     bm25 = build_bm25_index(corpus)
 
-    # Free corpus from memory (no longer needed)
     del corpus
 
-    # Step 3: Compute weak labels (NO bm25_score — non-circularity guarantee)
+    # compute weak labels 
     candidate_ids_set = set(candidate_ids)
     weak_labels, hard_req_scores, consistency_scores = compute_offline_weak_labels(
         candidates_path, jd_config, candidate_ids_set
     )
 
-    # Step 4: Save BM25 index + metadata
+    #  BM25 index + metadata
     save_artifacts(precomputed_dir, bm25, candidate_ids, weak_labels)
 
-    # Step 4b: Compute and save 18 static features offline
+    # compute and save 18 static features offline
     compute_and_save_static_features(candidates_path, candidate_ids, precomputed_dir)
 
-    # Step 5: Extract 22-feature matrix for training
+    # 22 feature matrix for training
     X, ordered_ids = extract_training_features(
         candidates_path, candidate_ids, jd_config, hard_req_scores, consistency_scores
     )
 
-    # Step 6: Train LightGBM
+    # train LightGBM
     train_lightgbm(X, weak_labels, ordered_ids, precomputed_dir)
 
     total_elapsed = time.time() - t_total
     logger.info("=== Precompute Complete in %.1fs ===", total_elapsed)
     logger.info("Artifacts in: %s", precomputed_dir)
 
-    # Print summary
+    # print summary
     artifact_sizes = {}
     for fname in ["bm25_index.pkl", "candidate_ids.pkl", "weak_labels.pkl", "lgbm_model.pkl"]:
         fpath = os.path.join(precomputed_dir, fname)
