@@ -39,14 +39,23 @@ def load_jd_config():
 
 @st.cache_resource(show_spinner="Loading BM25 index...")
 def load_bm25():
-    bm25_path = os.path.join(PRECOMPUTED_DIR, "bm25_index.pkl")
+    from retrieval import load_numpy_bm25_artifacts
+    bm25 = load_numpy_bm25_artifacts(PRECOMPUTED_DIR)
     ids_path = os.path.join(PRECOMPUTED_DIR, "candidate_ids.pkl")
-    if not os.path.isfile(bm25_path) or not os.path.isfile(ids_path):
+    if not os.path.isfile(ids_path):
+        return None, None
+    with open(ids_path, "rb") as f:
+        candidate_ids = pickle.load(f)
+
+    if bm25 is not None:
+        return bm25, candidate_ids
+
+    # Fallback to pickle
+    bm25_path = os.path.join(PRECOMPUTED_DIR, "bm25_index.pkl")
+    if not os.path.isfile(bm25_path):
         return None, None
     with open(bm25_path, "rb") as f:
         bm25 = pickle.load(f)
-    with open(ids_path, "rb") as f:
-        candidate_ids = pickle.load(f)
     return bm25, candidate_ids
 
 

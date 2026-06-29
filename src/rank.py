@@ -247,17 +247,18 @@ def extract_features_for_ranking(
     stage1_bm25_median: float,
     logger: logging.Logger,
     static_features: Optional[Dict[str, Dict[str, float]]] = None,
-) -> Tuple[np.ndarray, List[str]]:
+) -> Tuple[np.ndarray, List[str], Dict[str, float]]:
     """
     Extract the 22-feature matrix for all Stage 1 candidates.
 
     Returns:
-        (X: np.ndarray[N, 22], ordered_ids: List[str])
+        (X: np.ndarray[N, 22], ordered_ids: List[str], consistency_map: Dict[str, float])
     """
     from features import build_feature_vector, FEATURE_COLUMNS
 
     feature_rows = []
     ordered_ids = []
+    consistency_map = {}
     failed_count = 0
 
     for candidate in candidates:
@@ -272,9 +273,11 @@ def extract_features_for_ranking(
                 precomputed_static=static_features.get(cid) if static_features else None
             )
             row = [fv[col] for col in FEATURE_COLUMNS]
+            consistency_map[cid] = float(fv.get("consistency_score", 1.0))
         except Exception as e:
             logger.warning("Feature extraction failed for %s: %s", cid, e)
             row = [0.0] * len(FEATURE_COLUMNS)
+            consistency_map[cid] = 1.0
             failed_count += 1
 
         feature_rows.append(row)
@@ -285,7 +288,7 @@ def extract_features_for_ranking(
 
     X = np.array(feature_rows, dtype=np.float32)
     logger.info("Feature matrix: shape=%s", X.shape)
-    return X, ordered_ids
+    return X, ordered_ids, consistency_map
 
 def run_lightgbm_inference(
     model,
@@ -642,18 +645,23 @@ def main() -> None:
     # Stage 2b: Feature extraction
     # -----------------------------------------------------------------------
     t2b = time.time()
-    X, ordered_ids = extract_features_for_ranking(
+    X, ordered_ids, consistency_map = extract_features_for_ranking(
         stage1_candidates, jd_config, bm25_scores, stage1_bm25_median, logger,
         static_features=static_features
     )
     logger.info("Stage 2b (features): %.2fs", time.time() - t2b)
 
     # -----------------------------------------------------------------------
-    # Stage 4: LightGBM Inference
+    # Stage 4: LightGBM Inference + Consistency Multiplier
     # -----------------------------------------------------------------------
     t4 = time.time()
     lgbm_scores = run_lightgbm_inference(model, X, ordered_ids, logger)
-    logger.info("Stage 4 (LightGBM): %.2fs", time.time() - t4)
+    
+    # Apply post-inference consistency multiplier to suppress honeypots
+    for cid in lgbm_scores:
+        lgbm_scores[cid] *= consistency_map.get(cid, 1.0)
+        
+    logger.info("Stage 4 (LightGBM + multiplier): %.2fs", time.time() - t4)
 
     # -----------------------------------------------------------------------
     # Select top 100 and enforce monotonicity

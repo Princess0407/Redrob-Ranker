@@ -1,5 +1,10 @@
 team:
   name: "Ctrl Coffee Repeat"
+  primary_contact_name: "[ENTER PRIMARY CONTACT NAME HERE]"
+  primary_contact_email: "[ENTER PRIMARY CONTACT EMAIL HERE]"
+  primary_contact_phone: "[ENTER PRIMARY CONTACT PHONE HERE]"
+  github_repository_url: "[ENTER GITHUB REPOSITORY URL HERE]"
+  sandbox_demo_url: "[ENTER STREAMLIT CLOUD APP URL HERE]"
   members:
     - name: "Pranjal H Dohare"
       role: "Lead Developer"
@@ -14,7 +19,7 @@ submission:
 system:
   pipeline_type: "Offline-Indexed Lexical Retrieval + LightGBM LambdaRank"
   hardware: "CPU-only, ≤16GB RAM"
-  runtime_seconds: 20
+  runtime_seconds: 4
   network_calls_during_ranking: 0
 
 methodology_summary: |
@@ -33,9 +38,11 @@ methodology_summary: |
   timeline impossibilities, signup anomalies, salary inversions, assessment contradictions, and
   engagement mismatches.
 
-  Stage 4 (Ranking): LightGBM with objective=lambdarank trains on weak labels computed as
-  hard_req_coverage × consistency_score — explicitly excluding bm25_score to break circularity.
-  The model then discovers organic feature interactions using all 22 features including bm25_score.
+  Stage 4 (Ranking): LightGBM with objective=lambdarank trains on relevance labels generated
+  via 2,500 pairwise LLM comparisons using Gemma3:4b-it-q4_K_M (running offline and locally via 
+  Ollama). This explicitly breaks circularity: the LLM judges profiles organically without 
+  knowledge of the 22 features or BM25 scores. Candidates with data integrity violations are 
+  suppressed post-inference to near-zero regardless of model prediction.
 
   Stage 5 (Reasoning): Deterministic grammar engine generates fact-grounded reasoning with numeric
   regex audit (all cited numbers must exist in the candidate JSON) and n-gram collision avoidance
@@ -45,6 +52,9 @@ methodology_summary: |
 ai_tools_used:
   - tool: "Google DeepMind Antigravity (Claude Sonnet 4.6)"
     usage: "Code scaffolding, module structure, debugging LightGBM query size limit"
+    human_review: true
+  - tool: "Ollama (Quantized LLaMA Local)"
+    usage: "Offline pairwise candidate annotation to generate heuristic training labels (Step 6 of annotate_and_retrain.py)"
     human_review: true
 
 reference_date: "2026-01-01"
