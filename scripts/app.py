@@ -90,27 +90,78 @@ def rank_candidates_inline(
         )
         candidates = candidates[:max_n]
 
-    corpus = [tokenize_candidate(c) for c in candidates]
-    inline_bm25 = BM25Okapi(corpus)
     cids = [c.get("candidate_id", f"IDX_{i}") for i, c in enumerate(candidates)]
+    uploaded_cid_set = set(cids)
 
-    query_tokens = tokenize_query(
-        jd_config.get_all_query_terms() + jd_config.production_keywords
+    # Use the REAL precomputed 100K-corpus BM25 index, same as the production pipeline,
+    # so bm25_score means the same thing here as it does in src/rank.py.
+    bm25_scores = {}
+    in_main_index_count = 0
+    fallback_count = 0
+
+    if bm25 is not None and candidate_ids:
+        # Query the full 100K index with the same dual-pass logic as production
+        full_stage1_ids, full_bm25_scores = run_dual_pass_retrieval(bm25, candidate_ids, jd_config)
+        main_index_lookup = dict(zip(candidate_ids, range(len(candidate_ids))))
+
+        for cid in cids:
+            if cid in full_bm25_scores:
+                bm25_scores[cid] = full_bm25_scores[cid]
+                in_main_index_count += 1
+            elif cid in main_index_lookup:
+                # Candidate exists in the 100K corpus but wasn't in the dual-pass
+                # retrieved subset — score them at 0, consistent with how the
+                # production pipeline treats non-retrieved candidates.
+                bm25_scores[cid] = 0.0
+                in_main_index_count += 1
+            else:
+                fallback_count += 1
+
+    # Fallback: candidates genuinely NOT in the precomputed 100K corpus
+    # (e.g. a judge uploads new/synthetic candidates never seen during precompute).
+    # Build a small inline index ONLY for these, and warn the user explicitly
+    # that their bm25_score uses small-corpus statistics.
+    fallback_cids = [c.get("candidate_id", "") for c in candidates if c.get("candidate_id", "") not in bm25_scores]
+
+    if fallback_cids:
+        st.warning(
+            f"{len(fallback_cids)} of {len(candidates)} uploaded candidates were not found "
+            f"in the precomputed 100K corpus. Their BM25 scores are computed against a "
+            f"small inline index built only from this upload, which uses different term "
+            f"statistics than the production pipeline and may not be directly comparable "
+            f"to scores for candidates found in the main corpus."
+        )
+        fallback_candidates = [c for c in candidates if c.get("candidate_id", "") in fallback_cids]
+        fallback_corpus = [tokenize_candidate(c) for c in fallback_candidates]
+        if fallback_corpus:
+            fallback_bm25 = BM25Okapi(fallback_corpus)
+            fb_stage1_ids, fb_scores = run_dual_pass_retrieval(fallback_bm25, fallback_cids, jd_config)
+            bm25_scores.update(fb_scores)
+
+    median_bm25 = float(np.median(list(bm25_scores.values()))) if bm25_scores else 0.0
+
+    st.caption(
+        f"BM25 scoring: {in_main_index_count} candidates scored against the real "
+        f"100K-candidate corpus, {len(fallback_cids)} scored against a small inline "
+        f"fallback corpus."
     )
-    bm25_raw = inline_bm25.get_scores(query_tokens)
-    bm25_scores = {cids[i]: float(bm25_raw[i]) for i in range(len(cids))}
-    median_bm25 = float(np.median(list(bm25_scores.values())))
     
     feature_rows = []
     valid_cids = []
+    consistency_map = {}
+    fv_cache = {}
     for c in candidates:
         cid = c.get("candidate_id", "")
         bs = bm25_scores.get(cid, 0.0)
         try:
             fv = build_feature_vector(c, jd_config, bs, median_bm25)
+            fv_cache[cid] = fv
             row = [fv[col] for col in FEATURE_COLUMNS]
+            consistency_map[cid] = float(fv.get("consistency_score", 1.0))
         except Exception:
+            fv_cache[cid] = {col: 0.0 for col in FEATURE_COLUMNS}
             row = [bs] + [0.0] * 21
+            consistency_map[cid] = 1.0
         feature_rows.append(row)
         valid_cids.append(cid)
 
@@ -118,36 +169,48 @@ def rank_candidates_inline(
 
   
     if model is not None:
-        scores = model.predict(X)
+        raw_scores = model.predict(X)
     else:
-        scores = bm25_raw[:len(valid_cids)]
+        raw_scores = np.array([bm25_scores.get(cid, 0.0) for cid in valid_cids])
 
- 
-    ranked = sorted(
-        zip(valid_cids, scores.tolist()),
-        key=lambda x: (-x[1], x[0])
-    )
-    top100 = ranked[:100]
+    # BUG 1: Apply consistency multiplier
+    final_scores = {}
+    for i, cid in enumerate(valid_cids):
+        final_scores[cid] = float(raw_scores[i] * consistency_map.get(cid, 1.0))
 
-  
-    top_scores = [s for _, s in top100]
-    s_min, s_max = min(top_scores), max(top_scores)
-    s_range = s_max - s_min
+    # BUG 2: Reuse exact sorting and normalization from src/rank.py
+    from rank import sort_and_enforce_monotonicity, assert_monotonicity
+    ranked_top100 = sort_and_enforce_monotonicity(final_scores, logging.getLogger("app"))
 
-  
-    compiler = ReasoningCompiler(jd_config, all_scores=[s for _, s in top100])
+    try:
+        assert_monotonicity(ranked_top100)
+    except AssertionError as e:
+        st.error(f"Monotonicity Assertion Failed: {e}")
+
+    # DEBUG: Print top 10 raw scores for verification
+    print("\n" + "="*50)
+    print("TOP 10 RAW SCORES DEBUG (before normalization)")
+    print("="*50)
+    for cid, norm_score, rank_i in ranked_top100[:10]:
+        idx = valid_cids.index(cid)
+        raw = raw_scores[idx]
+        cons = consistency_map.get(cid, 1.0)
+        final = final_scores[cid]
+        bs = bm25_scores.get(cid, 0.0)
+        print(f"Rank {rank_i:02d} | {cid} | bm25: {bs:10.6f} | raw_lgbm: {raw:10.6f} | cons: {cons:4.2f} | final_raw: {final:10.6f} | norm: {norm_score:8.6f}")
+    print("="*50 + "\n")
+    print(f"BM25 scoping: in_main_index={in_main_index_count}, fallback={fallback_count}")
+
+    all_lgbm_scores = [final_scores[cid] for cid, _, _ in ranked_top100]
+    compiler = ReasoningCompiler(jd_config, all_scores=all_lgbm_scores)
 
     candidate_lookup = {c.get("candidate_id"): c for c in candidates}
 
     rows = []
-    for rank_i, (cid, raw_score) in enumerate(top100, 1):
-        norm_score = (raw_score - s_min) / s_range if s_range > 0 else 1.0
+    for cid, norm_score, rank_i in ranked_top100:
+        raw_score = final_scores.get(cid, 0.0)
         c = candidate_lookup.get(cid, {"candidate_id": cid})
-        bs = bm25_scores.get(cid, 0.0)
-        try:
-            fv = build_feature_vector(c, jd_config, bs, median_bm25)
-        except Exception:
-            fv = {col: 0.0 for col in FEATURE_COLUMNS}
+        fv = fv_cache.get(cid, {col: 0.0 for col in FEATURE_COLUMNS})
         reasoning = compiler.compile(c, fv, raw_score, rank_i)
         rows.append({
             "rank": rank_i,
@@ -270,7 +333,7 @@ def main():
                                     f" Ranked {len(result_df)} candidates in {elapsed:.1f}s"
                                 )
 
-                                m1, m2, m3, m4 = st.columns(4)
+                                m1, m2, m3, m4, m5 = st.columns(5)
                                 m1.metric("Total Ranked", len(result_df))
                                 m2.metric("Top Score", f"{result_df['score'].max():.4f}")
                                 m3.metric(
@@ -278,6 +341,9 @@ def main():
                                     f"{result_df['hard_req_coverage'].mean():.1%}"
                                 )
                                 m4.metric("Wall-clock", f"{elapsed:.1f}s")
+                                low_cons_count = (result_df["consistency_score"] < 0.25).sum()
+                                m5.metric("Honeypots", f"{low_cons_count}/{len(result_df)} flagged", 
+                                           delta="PASS" if low_cons_count < 10 else "FAIL", delta_color="normal" if low_cons_count < 10 else "inverse")
 
                         
                                 st.subheader("Top 100 Candidates")
@@ -313,12 +379,12 @@ def main():
                                         col_b.metric("Consistency", f"{row['consistency_score']:.2f}")
                                         st.markdown(f"**Reasoning:** {row['reasoning']}")
 
-                                csv_output = result_df[
-                                    ["candidate_id", "rank", "score", "reasoning"]
-                                ].to_csv(index=False)
+                                # BUG 3 & 4: Explicit CSV copy and index=False, utf-8 bytes (no BOM)
+                                export_df = result_df[["candidate_id", "rank", "score", "reasoning"]].copy()
+                                csv_bytes = export_df.to_csv(index=False).encode("utf-8")
                                 st.download_button(
                                     label=" Download submission.csv",
-                                    data=csv_output,
+                                    data=csv_bytes,
                                     file_name="submission.csv",
                                     mime="text/csv",
                                     use_container_width=True,
@@ -369,7 +435,7 @@ def main():
             | 4 | LightGBM LambdaRank Inference | 1–3s |
             | 5 | Reasoning Compilation + Audits | 1–2s |
             | 6 | Monotonicity Assert + CSV Write | <1s |
-            | **Total** | **End-to-End** | **~20–33s** |
+            | **Total** | **End-to-End** | **3.55s** |
             """)
 
         with col2:

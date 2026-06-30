@@ -34,9 +34,13 @@ logs/
 reasoning_trace.jsonl
 
 # Precomputed files — ignore large indices, keep trained model artifacts
+# Precomputed files — ignore large indices, keep sandbox-required artifacts
 precomputed/*
 !precomputed/lgbm_model.txt
 !precomputed/lgbm_model.pkl
+!precomputed/vocab.pkl
+!precomputed/bm25_matrix.npz
+!precomputed/candidate_ids.pkl
 
 # Diagnostic / dev-only scripts (not part of submission)
 diagnostics/

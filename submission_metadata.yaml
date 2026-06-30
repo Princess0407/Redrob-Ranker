@@ -1,10 +1,10 @@
 team:
   name: "Ctrl Coffee Repeat"
-  primary_contact_name: "[ENTER PRIMARY CONTACT NAME HERE]"
-  primary_contact_email: "[ENTER PRIMARY CONTACT EMAIL HERE]"
-  primary_contact_phone: "[ENTER PRIMARY CONTACT PHONE HERE]"
-  github_repository_url: "[ENTER GITHUB REPOSITORY URL HERE]"
-  sandbox_demo_url: "[ENTER STREAMLIT CLOUD APP URL HERE]"
+  primary_contact_name: "Pranjal H Dohare"
+  primary_contact_email: "[pranjaldohare8@gmail.com]"
+  primary_contact_phone: "+919320480095"
+  github_repository_url: "https://github.com/Pranjal1342/Redrob-Ranker"
+  sandbox_demo_url: "https://redrob-ranker.streamlit.app/"
   members:
     - name: "Pranjal H Dohare"
       role: "Lead Developer"
